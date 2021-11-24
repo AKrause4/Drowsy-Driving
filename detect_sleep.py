@@ -1,8 +1,6 @@
 # Modified PyimageSearch eye blink detection tutorial 
 # https://www.pyimagesearch.com/2017/04/24/eye-blink-detection-opencv-python-dlib/
 
-
-from scipy.spatial import distance as dist
 from imutils.video import FileVideoStream
 from imutils.video import VideoStream
 from imutils.video import FPS
@@ -15,6 +13,9 @@ import dlib
 import cv2
 import subprocess
 import os
+
+def dist(point_1, point_2):
+    return np.sqrt(np.sum(np.square(np.array(point_1) - np.array(point_2))))
 
 def eye_aspect_ratio(eye):
 	# compute the euclidean distances between the two sets of
