@@ -1,4 +1,4 @@
-# Based on PyimageSearch eye blink detection tutorial 
+# Modified PyimageSearch eye blink detection tutorial 
 # https://www.pyimagesearch.com/2017/04/24/eye-blink-detection-opencv-python-dlib/
 
 
@@ -14,8 +14,7 @@ import time
 import dlib
 import cv2
 import subprocess
-
-# make sure to install/upgrade imutils $ pip install --upgrade imutils
+import os
 
 def eye_aspect_ratio(eye):
 	# compute the euclidean distances between the two sets of
@@ -30,19 +29,17 @@ def eye_aspect_ratio(eye):
 	# return the eye aspect ratio
 	return ear
 
-# # construct the argument parse and parse the arguments
-# ap = argparse.ArgumentParser()
-# ap.add_argument("-p", "--shape-predictor", required=True,
-# 	help="path to facial landmark predictor")
-# ap.add_argument("-v", "--video", type=str, default="",
-# 	help="path to input video file")
-# args = vars(ap.parse_args())
-
 # define a constant for the eye aspect ratio to indicate a blink 
 EYE_AR_THRESH = 0.2
+mov_avg = 0
+drop_threshold = 50
+lag = 21 #delay before prompting user
+init_period = 5 #moving average window for nose
 # initialize the frame counters
 COUNTER = 0
-
+total_frames = 0
+drop_counter = 0
+drop_flag = 0
 # initialize dlib's face detector (HOG-based) and then create
 # the facial landmark predictor
 print("[INFO] loading facial landmark predictor...")
@@ -54,19 +51,30 @@ predictor = dlib.shape_predictor(datFile)
 # right eye, respectively
 (lStart, lEnd) = face_utils.FACIAL_LANDMARKS_IDXS["left_eye"]
 (rStart, rEnd) = face_utils.FACIAL_LANDMARKS_IDXS["right_eye"]
+(nStart, nEnd) = face_utils.FACIAL_LANDMARKS_IDXS["nose"]
+(lbStart, lbEnd) = face_utils.FACIAL_LANDMARKS_IDXS["left_eyebrow"]
+(rbStart, rbEnd) = face_utils.FACIAL_LANDMARKS_IDXS["left_eyebrow"]
+
+#toggle for recorded video
+rec_video = False
 
 # start the video stream thread
 print("[INFO] starting video stream thread...")
 # vs = FileVideoStream(args["video"]).start()
-# fileStream = True
-vs = VideoStream(src=0).start()
+#fileStream = True
+if rec_video == False:
+	vs = VideoStream(src=0).start()
 # uncomment below line for raspberry pi camera
 # vs = VideoStream(usePiCamera=True).start()
 fileStream = False
+
+if rec_video == True: 
+    vs = cv2.VideoCapture("IMG_7478.MOV")
 time.sleep(1.0)
 
 # start the FPS throughput estimator
 fps = FPS().start()
+nose_tip = []
 
 # loop over frames from the video stream
 while True:
@@ -77,7 +85,14 @@ while True:
 	# grab the frame from the threaded video file stream, resize
 	# it, and convert it to grayscale
 	# channels)
-	frame = vs.read()
+	if rec_video == True:
+		ret, frame = vs.read()
+		if ret == False:
+			break
+	else:
+		frame = vs.read()
+	total_frames += 1
+	
 	frame = imutils.resize(frame, width=450)
 	gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 	# detect faces in the grayscale frame
@@ -94,6 +109,7 @@ while True:
 		# coordinates to compute the eye aspect ratio for both eyes
 		leftEye = shape[lStart:lEnd]
 		rightEye = shape[rStart:rEnd]
+
 		leftEAR = eye_aspect_ratio(leftEye)
 		rightEAR = eye_aspect_ratio(rightEye)
 		# average the eye aspect ratio together for both eyes
@@ -106,13 +122,46 @@ while True:
 		cv2.drawContours(frame, [leftEyeHull], -1, (0, 255, 0), 1)
 		cv2.drawContours(frame, [rightEyeHull], -1, (0, 255, 0), 1)
 
+		#get nose position
+		nose = shape[nStart:nEnd]
+		#l_eyebrow = shape[lbStart:lbEnd]
+		#r_eyebrow = shape[rbStart:rbEnd]
+		nose_tip.append(nose[6][1]) #append tip of nose to list
+		#initialize nose when looking straight ahead
+		if total_frames == init_period:
+			mov_avg = np.convolve(nose_tip, np.ones(5), 'valid')/5
+			prev_nose = nose_tip[-1]
+		if total_frames>= init_period:
+			drop = nose_tip[-1]-mov_avg[-1] #compute head drop
+			rel_drop = nose_tip[-1] - prev_nose
+			prev_nose = nose_tip[-1]
+			if drop > drop_threshold:
+				drop_counter += 1
+				cv2.putText(frame, 'Look up', (10,frame.shape[0]),cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+			if rel_drop>20:
+				drop_counter = 100
+				print('You nodded off! Wake up') 
+			if drop_counter >=lag: #detect prolonged drop
+					print('Lift your head!')
+					cv2.putText(frame, 'Look up', (10,frame.shape[0]),cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+					if rec_video == False:
+						subprocess.call(["espeak", "-s 5 -ven", "Look up"])
+					drop_counter = 0
+					drop_flag = 1    
+			if drop < drop_threshold and drop_flag == 1 and rel_drop<20: #detect looking up
+				print("Good job looking up")
+				drop_flag = 0
+		cv2.circle(frame, (nose[6][0], nose[6][1]), radius = 4, color = (0, 255, 0), thickness = 1) #draw nose
 		# check to see if the eye aspect ratio is below the blink
 		# threshold, and if so, increment the blink frame counter
 		if ear < EYE_AR_THRESH:
 			COUNTER += 1
-			if COUNTER >= 21:
+			cv2.putText(frame, 'Wake up', (10,frame.shape[0]-20),cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+			if COUNTER >= lag:
 				print('Wake up!')
-				subprocess.call(["espeak", "-s 5 -ven", "You may have fallen asleep"])
+				cv2.putText(frame, 'Wake up', (10,frame.shape[0]-20),cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+				if rec_video == False:
+					subprocess.call(["espeak", "-s 5 -ven", "You may have fallen asleep"])
 				COUNTER = 0
  	
  	# update the FPS counter
@@ -132,5 +181,8 @@ print("[INFO] elasped time: {:.2f}".format(fps.elapsed()))
 print("[INFO] approx. FPS: {:.2f}".format(fps.fps()))
 
 # do a bit of cleanup
+if rec_video == True:
+	vs.release()
+else:
+	vs.stop()
 cv2.destroyAllWindows()
-vs.stop()
