@@ -20,21 +20,27 @@ def dist(point_1, point_2):
 def eye_aspect_ratio(eye):
 	# compute the euclidean distances between the two sets of
 	# vertical eye landmarks (x, y)-coordinates
-	A = dist.euclidean(eye[1], eye[5])
-	B = dist.euclidean(eye[2], eye[4])
+	A = dist(eye[1], eye[5])
+	B = dist(eye[2], eye[4])
 	# compute the euclidean distance between the horizontal
 	# eye landmark (x, y)-coordinates
-	C = dist.euclidean(eye[0], eye[3])
+	C = dist(eye[0], eye[3])
 	# compute the eye aspect ratio
 	ear = (A + B) / (2.0 * C)
 	# return the eye aspect ratio
 	return ear
 
+#toggle for recorded video
+rec_video = False
+
+if rec_video == True:
+	lag = 21 #delay before prompting user using recorded video
+else:
+	lag = 15 #delay before prompting user using raspberry pi
 # define a constant for the eye aspect ratio to indicate a blink 
 EYE_AR_THRESH = 0.2
 mov_avg = 0
 drop_threshold = 50
-lag = 21 #delay before prompting user
 init_period = 5 #moving average window for nose
 # initialize the frame counters
 COUNTER = 0
@@ -55,9 +61,6 @@ predictor = dlib.shape_predictor(datFile)
 (nStart, nEnd) = face_utils.FACIAL_LANDMARKS_IDXS["nose"]
 (lbStart, lbEnd) = face_utils.FACIAL_LANDMARKS_IDXS["left_eyebrow"]
 (rbStart, rbEnd) = face_utils.FACIAL_LANDMARKS_IDXS["left_eyebrow"]
-
-#toggle for recorded video
-rec_video = False
 
 # start the video stream thread
 print("[INFO] starting video stream thread...")
@@ -157,7 +160,6 @@ while True:
 		# threshold, and if so, increment the blink frame counter
 		if ear < EYE_AR_THRESH:
 			COUNTER += 1
-			cv2.putText(frame, 'Wake up', (10,frame.shape[0]-20),cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
 			if COUNTER >= lag:
 				print('Wake up!')
 				cv2.putText(frame, 'Wake up', (10,frame.shape[0]-20),cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
